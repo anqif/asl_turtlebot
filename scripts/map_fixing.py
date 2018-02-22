@@ -2,7 +2,7 @@
 import rospy
 from gazebo_msgs.msg import ModelStates
 from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist, Point
+from geometry_msgs.msg import Twist, TransformStamped, Point
 from visualization_msgs.msg import Marker
 import numpy as np
 import scipy.linalg
@@ -19,6 +19,20 @@ def get_yaw_from_quaternion(quat):
                                                      quat.y,
                                                      quat.z,
                                                      quat.w])[2]
+
+def create_transform_msg(translation, rotation, child_frame, base_frame, time=None):
+    t = TransformStamped()
+    t.header.stamp = time if time else rospy.Time.now()
+    t.header.frame_id = base_frame
+    t.child_frame_id = child_frame
+    t.transform.translation.x = translation[0]
+    t.transform.translation.y = translation[1]
+    t.transform.translation.z = translation[2]
+    t.transform.rotation.x = rotation[0]
+    t.transform.rotation.y = rotation[1]
+    t.transform.rotation.z = rotation[2]
+    t.transform.rotation.w = rotation[3]
+    return t
 
 def line_endpoints_from_alpha_and_r(alpha, r, d = 100.0):
     return ((r*np.cos(alpha) - d*np.sin(alpha), r*np.sin(alpha) + d*np.cos(alpha)),
@@ -41,7 +55,7 @@ class EKF_SLAM_Visualizer:
         while True:
             try:
                 # notably camera_link and not camera_depth_frame below, not sure why
-                self.raw_base_to_camera = self.tfBuffer.lookup_transform("base_footprint", "camera_link", rospy.Time()).transform
+                self.raw_base_to_camera = self.tfBuffer.lookup_transform("base_footprint", "base_scan", rospy.Time()).transform
                 break
             except tf2_ros.LookupException:
                 rate.sleep()
@@ -51,6 +65,11 @@ class EKF_SLAM_Visualizer:
         self.base_to_camera = [translation.x,
                                translation.y,
                                tf_theta]
+
+        ## Colocate the `ground_truth` and `base_footprint` frames for visualization purposes
+        tf2_ros.StaticTransformBroadcaster().sendTransform(
+            create_transform_msg((0,0,0), (0,0,0,1), "ground_truth", "base_footprint")
+        )
 
         ## Initial state for EKF
         self.EKF = None
@@ -71,9 +90,9 @@ class EKF_SLAM_Visualizer:
                                         [NoiseParams["std_r"]**2 for i in range(N_map_lines-2)]]).T.flatten())))
 
         ## Set up publishers and subscribers
-        self.tfBroadcaster = tf.TransformBroadcaster()
+        self.tfBroadcaster = tf2_ros.TransformBroadcaster()
         rospy.Subscriber('/scan', LaserScan, self.scan_callback)
-        rospy.Subscriber('/cmd_vel_mux/input/teleop', Twist, self.control_callback)
+        rospy.Subscriber('/cmd_vel', Twist, self.control_callback)
         rospy.Subscriber('/gazebo/model_states', ModelStates, self.state_callback)
         self.ground_truth_ct = 0
 
@@ -84,9 +103,9 @@ class EKF_SLAM_Visualizer:
         self.ground_truth_map_marker.ns = "ground_truth"
         self.ground_truth_map_marker.type = 5    # line list
         self.ground_truth_map_marker.pose.orientation.w = 1.0
-        self.ground_truth_map_marker.scale.x = .01
-        self.ground_truth_map_marker.scale.y = .01
-        self.ground_truth_map_marker.scale.z = .01
+        self.ground_truth_map_marker.scale.x = .025
+        self.ground_truth_map_marker.scale.y = .025
+        self.ground_truth_map_marker.scale.z = .025
         self.ground_truth_map_marker.color.r = 0.0
         self.ground_truth_map_marker.color.g = 1.0
         self.ground_truth_map_marker.color.b = 0.0
@@ -119,13 +138,12 @@ class EKF_SLAM_Visualizer:
         # `rostopic hz /gazebo/model_states` = 1000; let's broadcast the transform at 20Hz to reduce lag
         if self.ground_truth_ct % 50 == 0:
             self.latest_pose_time = rospy.Time.now()
-            self.latest_pose = msg.pose[msg.name.index("mobile_base")]
-            self.tfBroadcaster.sendTransform((self.latest_pose.position.x, self.latest_pose.position.y, 0),
-                                             (self.latest_pose.orientation.x,
-                                              self.latest_pose.orientation.y,
-                                              self.latest_pose.orientation.z,
-                                              self.latest_pose.orientation.w),
-                                             self.latest_pose_time, "ground_truth", "world")
+            self.latest_pose = msg.pose[msg.name.index("turtlebot3_burger")]
+            self.tfBroadcaster.sendTransform(create_transform_msg(
+                (self.latest_pose.position.x, self.latest_pose.position.y, 0),
+                (self.latest_pose.orientation.x, self.latest_pose.orientation.y, self.latest_pose.orientation.z, self.latest_pose.orientation.w),
+                "base_footprint", "world", self.latest_pose_time)
+            )
 
     def run(self):
         rate = rospy.Rate(100)
@@ -164,12 +182,16 @@ class EKF_SLAM_Visualizer:
                 self.OLC.transition_update(self.current_control,
                                            next_timestep.to_time() - self.EKF_time.to_time())
                 self.EKF_time, self.current_control = next_timestep, next_control
-                self.tfBroadcaster.sendTransform((self.EKF.x[0], self.EKF.x[1], 0),
-                                                 tf.transformations.quaternion_from_euler(0, 0, self.EKF.x[2]),
-                                                 self.EKF_time, "EKF", "world")
-                self.tfBroadcaster.sendTransform((self.OLC.x[0], self.OLC.x[1], 0),
-                                                 tf.transformations.quaternion_from_euler(0, 0, self.OLC.x[2]),
-                                                 self.EKF_time, "open_loop", "world")
+                self.tfBroadcaster.sendTransform(create_transform_msg(
+                    (self.EKF.x[0], self.EKF.x[1], 0),
+                    tf.transformations.quaternion_from_euler(0, 0, self.EKF.x[2]),
+                    "EKF", "world", self.EKF_time)
+                )
+                self.tfBroadcaster.sendTransform(create_transform_msg(
+                    (self.OLC.x[0], self.OLC.x[1], 0),
+                    tf.transformations.quaternion_from_euler(0, 0, self.OLC.x[2]),
+                    "open_loop", "world", self.EKF_time)
+                )
             
             scan_time, theta, rho = self.scans.popleft()
             if scan_time < self.EKF_time:

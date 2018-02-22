@@ -8,6 +8,7 @@
       <commandTopic>cmd_vel</commandTopic>
       <odometryTopic>odom</odometryTopic>
       <odometryFrame>odom</odometryFrame>
+      <publishTf>0</publishTf>
       <robotBaseFrame>base_footprint</robotBaseFrame>
       <publishWheelTF>false</publishWheelTF>
       <publishWheelJointState>true</publishWheelJointState>
@@ -106,8 +107,8 @@
           <horizontal>
             <samples>360</samples>
             <resolution>1</resolution>
-            <min_angle>0.0</min_angle>
-            <max_angle>6.28</max_angle>
+            <min_angle>-1.0</min_angle>
+            <max_angle>1.0</max_angle>
           </horizontal>
         </scan>
         <range>
@@ -118,7 +119,7 @@
         <noise>
           <type>gaussian</type>
           <mean>0.0</mean>
-          <stddev>0.001</stddev>
+          <stddev>0.05</stddev>
         </noise>
       </ray>
       <plugin name="gazebo_ros_lds_lfcd_controller" filename="libgazebo_ros_laser.so">
