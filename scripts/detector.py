@@ -6,19 +6,19 @@ import os
 from tf import TransformListener
 import tensorflow as tf
 import numpy as np
-from sensor_msgs.msg import Image, CameraInfo, LaserScan
+from sensor_msgs.msg import CompressedImage, Image, CameraInfo, LaserScan
 from asl_turtlebot.msg import DetectedObject
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import math
 
 # path to the trained conv net
-PATH_TO_MODEL = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/stop_signs_gazebo.pb')
+PATH_TO_MODEL = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/ssd_mobilenet_v1_coco.pb')
 PATH_TO_LABELS = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/coco_labels.txt')
 
 # set to True to use tensorflow and a conv net
 # False will use a very simple color thresholding to detect stop signs only
-USE_TF = False
+USE_TF = True
 # minimum score for positive detection
 MIN_SCORE = .5
 
@@ -69,7 +69,8 @@ class Detector:
         self.object_labels = load_object_labels(PATH_TO_LABELS)
 
         self.tf_listener = TransformListener()
-        rospy.Subscriber('/camera/image_raw', Image, self.camera_callback, queue_size=1)
+        rospy.Subscriber('/camera/image_raw', Image, self.camera_callback, queue_size=1, buff_size=2**24)
+        rospy.Subscriber('/camera/image_raw/compressed', CompressedImage, self.compressed_camera_callback, queue_size=1, buff_size=2**24)
         rospy.Subscriber('/camera/camera_info', CameraInfo, self.camera_info_callback)
         rospy.Subscriber('/scan', LaserScan, self.laser_callback)
 
@@ -184,6 +185,23 @@ class Detector:
         except CvBridgeError as e:
             print(e)
 
+        self.camera_common(img_laser_ranges, img, img_bgr8)
+
+    def compressed_camera_callback(self, msg):
+        """ callback for camera images """
+
+        # save the corresponding laser scan
+        img_laser_ranges = list(self.laser_ranges)
+
+        try:
+            img = self.bridge.compressed_imgmsg_to_cv2(msg, "passthrough")
+            img_bgr8 = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+        except CvBridgeError as e:
+            print(e)
+
+        self.camera_common(img_laser_ranges, img, img_bgr8)
+
+    def camera_common(self, img_laser_ranges, img, img_bgr8):
         (img_h,img_w,img_c) = img.shape
 
         # runs object detection in the image
