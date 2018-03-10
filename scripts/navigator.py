@@ -186,6 +186,7 @@ class Navigator:
                         pose_st = PoseStamped()
                         pose_st.pose.position.x = state[0]
                         pose_st.pose.position.y = state[1]
+                        pose_st.pose.orientation.w = 1
                         pose_st.header.frame_id = 'map'
                         path_msg.poses.append(pose_st)
                     self.nav_path_pub.publish(path_msg)
