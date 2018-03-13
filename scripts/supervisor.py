@@ -57,6 +57,7 @@ class Supervisor:
 
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
+        rospy.Subscriber('/explore/goal', PoseStamped, self.rviz_goal_callback)
 
         self.trans_listener = tf.TransformListener()
 
