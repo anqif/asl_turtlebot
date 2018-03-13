@@ -42,14 +42,18 @@ expl_goal_publisher = rospy.Publisher('/move_base_simple/goal', PoseStamped, que
 
 
 # Defining goal pose locations
+current_plan = [[0., 0.,], [0., 5.]]
 expl_poses = [];
-pose_1 = PoseStamped()
-pose_1.pose.position.x = 0.
-pose_1.pose.position.y = 0.
-pose_1.pose.orientation.w = 1
-pose_.header.frame_id = 'map'
+for state in current_plan:
+    pose_st = PoseStamped()
+    pose_st.pose.position.x = state[0]
+    pose_st.pose.position.y = state[1]
+    pose_st.pose.orientation.w = 1
+    pose_st.header.frame_id = 'map'
+    expl_poses.append(pose_st)
 
 
+eps = 0.1
 rate = rospy.Rate(10)  # 10 Hz
 for goal in expl_poses: # list of goal poses
 	expl_goal_publisher.publish(goal)
