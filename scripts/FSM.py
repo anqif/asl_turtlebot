@@ -64,10 +64,12 @@ class Supervisor:
         self.last_mode_printed = None
 
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
+        self.rescue_rdy_publisher = rospy.Publisher('/ready_to_rescue', bool, queue_size=10)
+
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/detector/dog', DetectedObject, self.animal_detected_callback)
-        #rospy.Subscriber('/', ,self.comm_callback) this subscriber is for communication!
+        rospy.Subscriber('/rescue_on', bool, self.comm_callback)
 
         #constructor
         self.trans_listener = tf.TransformListener()
@@ -208,7 +210,7 @@ class Supervisor:
                 rospy.loginfo("exploring...")
 
         elif self.mode == Mode.STOP:
-            #cannot use sleep as we would stil like to record/calculate animal positions
+            # cannot use sleep as we would stil like to record/calculate animal positions
             rospy.loginfo("Stopped...")
             curr_time_sec = rospy.get_time()
             print curr_time_sec
@@ -233,8 +235,9 @@ class Supervisor:
                 self.mode = self.BTOG
 
         elif self.mode == Mode.COMM:
-            #subscribe to receive signal of start rescuing
+            # subscribe to receive signal of start rescuing
             rospy.loginfo("wait for rescue...")
+            self.rescue_rdy_publisher.publish(True)
 
         elif self.mode == Mode.BTOG:
             self.PreMode = self.mode

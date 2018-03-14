@@ -47,7 +47,7 @@ class Rescuer:
 	def rescue_on_callback(self, msg):
 		""" callback for signal to start rescue """
 
-		self.mode = Mode.START if rescue_on else Mode.IDLE   # TODO: Can we assume /rescue_on publishes True throughout rescue operation?
+		self.mode = Mode.START if msg else Mode.IDLE   # TODO: Can we assume /rescue_on publishes True throughout rescue operation?
 
 	def go_to_start(self):
 		""" sends the starting pose to the supervisor """
