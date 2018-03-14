@@ -143,10 +143,14 @@ class Detector:
 
         ### YOUR CODE HERE ###
 
-        x = 1 # CHANGE ME
-        y = 0 # CHANGE ME
-        z = 0 # CHANGE ME
-
+        x = (u-self.cx)/self.fx # CHANGED
+        y = (v-self.cy)/self.fy # CHANGED
+        z = 1.0 # CHANGED
+        #normalize
+        length = np.sqrt(x**2+y**2+z**2)
+        x = x/length
+        y = y/length
+        z = z/length
         ### END OF YOUR CODE ###
 
         return (x,y,z)
@@ -261,10 +265,10 @@ class Detector:
 
         ### YOUR CODE HERE ###
 
-        self.cx = 0 # CHANGE ME
-        self.cy = 0 # CHANGE ME
-        self.fx = 1 # CHANGE ME
-        self.fy = 1 # CHANGE ME
+        self.cx = msg.K[2] # CHANGEE
+        self.cy = msg.K[5] # CHANGED
+        self.fx = msg.K[0] # CHANGEDE
+        self.fy = msg.K[4] # CHANGED 
 
         ### END OF YOUR CODE ###
 
