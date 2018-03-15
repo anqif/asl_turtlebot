@@ -60,24 +60,25 @@ class Supervisor:
         self.theta = 0
 
         # current mode
-        self.mode = Mode.EXPLORE
+        self.mode = Mode.RESCUE#EXPLORE
         self.last_mode_printed = None
 
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
-        self.rescue_rdy_publisher = rospy.Publisher('/ready_to_rescue', bool, queue_size=10)
+        # self.rescue_rdy_publisher = rospy.Publisher('/ready_to_rescue', bool, queue_size=10)
 
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
         rospy.Subscriber('/detector/dog', DetectedObject, self.animal_detected_callback)
-        rospy.Subscriber('/rescue_on', bool, self.comm_callback)
+        rospy.Subscriber('/cmd_pose', Pose2D, self.goal_pose_callback)
+        # rospy.Subscriber('/rescue_on', bool, self.comm_callback)
 
         #constructor
         self.trans_listener = tf.TransformListener()
         #self.trans_listener2 = tf.TransformListener()
 
         # # of detected animals
-        self.detected = 0
+        self.detected = 3
         #all # of animals
         self.all = 5
         # # of rescued animals
@@ -85,10 +86,14 @@ class Supervisor:
         #PreMode for going back to the previous meaningful mode after stopped
         self.PreMode = self.mode
         #list of detected animals x,y (no th needed)
-        self.Detected_animal_list = []
+        self.Detected_animal_list = [[3,3],[4,1],[1,1]]
 
         #list of edtected stop signs (x,y) (no th needed)
         self.Detected_stop_list = []
+
+        self.pose_garage = np.array([0,0, np.pi])
+
+        self.GarageReached = True
 
 
     def animal_detected_callback(self, msg):
@@ -112,7 +117,7 @@ class Supervisor:
             self.Detected_animal_list.append((x_curr_animal, y_curr_animal)) # add animal to list
 
         #need to change detected_pos thing, idea is to make sure the newly rescued animal is among the previously detected animal
-        if (self.mode == Mode.RESCUE) and self.close_to_animal(self.Detected_animal_list[self.rescued][0], self.Detected_animal_list[self.rescued][1]):
+        if (self.mode == Mode.RESCUE): #and self.close_to_wo_th(self.Detected_animal_list[self.rescued][0], self.Detected_animal_list[self.rescued][1]):
             self.PreMode = Mode.RESCUE
             self.mode = Mode.STOP
             self.rescued += 1
@@ -144,19 +149,29 @@ class Supervisor:
         if msg:
             self.mode = Mode.RESCUE
 
+    def goal_pose_callback(self, msg):
+        x, y, th = msg
+        self.x_g = x
+        self.y_g = y
+        self.th_g = th
+
+    def set_goal_pose(self):
+        if self.mode == Mode.RESCUE:
+            self.x_g = self.Detected_animal_list[self.rescued-1][0]
+            self.y_g = self.Detected_animal_list[self.rescued-1][1]
+            self.th_g = 0
+        elif self.mode == Mode.BTOG:
+            self.x_g = self.pose_garage[0]
+            self.y_g = self.pose_garage[1]
+            self.th_g = 0
+
     def nav_to_pose(self):
         """ sends the current desired pose to the naviagtor """
         nav_g_msg = Pose2D()
 
-        if self.mode == Mode.RESCUE:
-            nav_g_msg.x = self.Detected_animal_list[self.rescued][0]
-            nav_g_msg.y = self.Detected_animal_list[self.rescued][1]
-            nav_g_msg.theta = 0
-
-        else:
-            nav_g_msg.x = self.x_g
-            nav_g_msg.y = self.y_g
-            nav_g_msg.theta = self.theta_g
+        nav_g_msg.x = self.x_g
+        nav_g_msg.y = self.y_g
+        nav_g_msg.theta = self.th_g
 
         self.nav_goal_publisher.publish(nav_g_msg)
 
@@ -164,8 +179,10 @@ class Supervisor:
         """ checks if the robot is at a pose within some threshold """
         return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS and abs(theta-self.theta)<THETA_EPS)
 
-    def close_to_animal(self,x,y):
+    def close_to_wo_th(self,x,y):
         """ check if the position of the robot is close enough to the animal being rescued """
+        print type(x)
+        print type(self.x)
         return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS)
 
     # def go_to_pose(self):
@@ -249,17 +266,17 @@ class Supervisor:
             print curr_time_sec2
             if (self.PreMode == Mode.EXPLORE) or (self.PreMode == Mode.RESCUE) or (self.PreMode == Mode.BTOG):
                 while (rospy.get_time() - curr_time_sec2 <= CROSSING_TIME):
-                    pass
+                    self.nav_to_pose()
                 print 'time after cross: ', rospy.get_time()
                 self.mode = self.PreMode
 
         elif self.mode == Mode.RESCUE:
             self.PreMode = self.mode
-
+            self.set_goal_pose()
             if self.rescued != self.detected:
                 self.nav_to_pose()
             else:
-                self.mode = self.BTOG
+                self.mode = Mode.BTOG
 
         elif self.mode == Mode.COMM:
             # subscribe to receive signal of start rescuing
@@ -267,9 +284,13 @@ class Supervisor:
             self.rescue_rdy_publisher.publish(True)
 
         elif self.mode == Mode.BTOG:
+            self.set_goal_pose()
             self.PreMode = self.mode
-            if (GarageReached) and (AllRescued):
+            self.GarageReached = self.close_to_wo_th(self.pose_garage[0], self.pose_garage[1])
+            if (self.GarageReached) and (self.rescued == self.detected):
                 self.mode = Mode.IDLE
+            elif self.GarageReached == 0:
+                self.nav_to_pose()
 
         else:
             raise Exception('This mode is not supported: %s'
