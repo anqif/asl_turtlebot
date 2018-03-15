@@ -60,8 +60,8 @@ class Explorer:
 			return False
 
 	def is_close(self, pose0, pose1):
-		x0, y0, theta0 = get_state(pose0)
-		x1, y1, theta1 = get_state(pose1)
+		x0, y0, theta0 = pose_to_state(pose0)
+		x1, y1, theta1 = pose_to_state(pose1)
 		return (abs(x1-x0) < POS_EPS and abs(y1-y0) < POS_EPS and abs(theta0-theta1) < THETA_EPS)
 
 	def loop(self):
