@@ -3,6 +3,7 @@
 import numpy as np
 import rospy
 from gazebo_msgs.msg import ModelStates
+from std_msgs.msg import Bool
 from std_msgs.msg import Float32MultiArray, String
 from geometry_msgs.msg import Twist, PoseArray, Pose2D
 from asl_turtlebot.msg import DetectedObject
@@ -65,7 +66,7 @@ class Supervisor:
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
-        self.rescue_rdy_publisher = rospy.Publisher('/ready_to_rescue', bool, queue_size=1)
+        self.rescue_rdy_publisher = rospy.Publisher('/ready_to_rescue', Bool, queue_size=1)
         # detection subscriber:
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         rospy.Subscriber('/detector/cat', DetectedObject, self.animal_detected_callback)
@@ -77,9 +78,9 @@ class Supervisor:
         # to get rviz goal position
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
         # to get the signal of start of rescuing
-        rospy.Subscriber('/rescue_on', bool, self.comm_callback)
+        rospy.Subscriber('/rescue_on', Bool, self.comm_callback)
         # to get the signal of end of exploration
-        rospy.Subscriber('/key_exit', bool, self.exit_explore_callback) #new explore flag
+        rospy.Subscriber('/key_exit', Bool, self.exit_explore_callback) #new explore flag
 
         #constructor
         self.trans_listener = tf.TransformListener()
