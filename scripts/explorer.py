@@ -40,7 +40,7 @@ class Explorer:
         self.last_mode_printed = None
 		
 		# list of goal poses for exploration
-		self.expl_goals = [state_to_pose(*state) for state in Explore_Plan]
+		self.expl_goals = [state_to_pose(*state) for state in EXPLORE_PLAN]
 		self.cur_goal_idx = 0
 		
 		self.expl_goal_publisher = rospy.Publisher('/move_base_simple/goal', PoseStamped, queue_size=10)
