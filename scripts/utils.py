@@ -6,7 +6,7 @@ def wrapToPi(a):
         return [(x + np.pi) % (2*np.pi) - np.pi for x in a]
     return (a + np.pi) % (2*np.pi) - np.pi
 
-def state_to_pose(x,y,theta):
+def state_to_pose(x,y,theta = None):
 	""" convert state (x,y,theta) to PoseStamped """
 	
 	p = PoseStamped()
@@ -14,11 +14,15 @@ def state_to_pose(x,y,theta):
 	p.pose.position.y = y
 	p.pose.position.z = 0
 	
-	quaternion = tf.transformations.quaternion_from_euler(0,0,theta)
-	p.pose.orientation.x = quaternion[0]
-	p.pose.orientation.y = quaternion[1]
-	p.pose.orientation.z = quaternion[2]
-	p.pose.orientation.w = quaternion[3]
+	if theta is None:
+		p.pose.orientation.w = 1
+	else:
+		quaternion = tf.transformations.quaternion_from_euler(0,0,theta)
+		p.pose.orientation.x = quaternion[0]
+		p.pose.orientation.y = quaternion[1]
+		p.pose.orientation.z = quaternion[2]
+		p.pose.orientation.w = quaternion[3]
+	p.header.frame_id = 'map'   # TODO: Is this necessary?
 	return p
 
 def pose_to_state(msg):

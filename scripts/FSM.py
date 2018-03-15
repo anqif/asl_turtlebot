@@ -193,10 +193,10 @@ class Supervisor:
             rospy.loginfo("Current Mode: %s", self.mode)
             self.last_mode_printed = self.mode
 
-        # checks wich mode it is in and acts accordingly
+        # checks which mode it is in and acts accordingly
         if self.mode == Mode.IDLE:
             # not doing anything
-            rospy.loginfo("Idling..")
+            rospy.loginfo("Idling...")
 
         elif self.mode == Mode.EXPLORE:
             # animal or stop sign detected
@@ -207,26 +207,26 @@ class Supervisor:
             else:
                 #explore
                 self.PreMode = Mode.EXPLORE
-                rospy.loginfo("exploring...")
+                rospy.loginfo("Exploring...")
 
         elif self.mode == Mode.STOP:
-            # cannot use sleep as we would stil like to record/calculate animal positions
+            # cannot use sleep as we would still like to record/calculate animal positions
             rospy.loginfo("Stopped...")
             curr_time_sec = rospy.get_time()
             print curr_time_sec
             while (rospy.get_time() - curr_time_sec <= STOP_TIME):
                 pass
-            print 'time after stop: ', rospy.get_time()
+            print 'Time after stop: ', rospy.get_time()
             self.mode = Mode.CROSS
 
         elif self.mode == Mode.CROSS:
-            rospy.loginfo("crossing...")
+            rospy.loginfo("Crossing...")
             curr_time_sec2 = rospy.get_time()
             print curr_time_sec2
             if (self.PreMode == Mode.EXPLORE) or (self.PreMode == Mode.RESCUE) or (self.PreMode == Mode.BTOG):
                 while (rospy.get_time() - curr_time_sec2 <= CROSSING_TIME):
                     pass
-                print 'time after cross: ', rospy.get_time()
+                print 'Time after cross: ', rospy.get_time()
                 self.mode = self.PreMode
 
         elif self.mode == Mode.RESCUE:
@@ -236,7 +236,7 @@ class Supervisor:
 
         elif self.mode == Mode.COMM:
             # subscribe to receive signal of start rescuing
-            rospy.loginfo("wait for rescue...")
+            rospy.loginfo("Waiting for rescue signal...")
             self.rescue_rdy_publisher.publish(True)
 
         elif self.mode == Mode.BTOG:
