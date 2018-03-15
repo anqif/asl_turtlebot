@@ -4,6 +4,11 @@ import rospy
 import os
 # watch out on the order for the next two imports lol
 from tf import TransformListener
+#Ruined STUFF watch out!
+#--------------------------------
+from tf import LookupException, ConnectivityException, ExtrapolationException
+from tf.transformations import euler_from_quaternion
+#--------------------------------
 import tensorflow as tf
 import numpy as np
 from sensor_msgs.msg import CompressedImage, Image, CameraInfo, LaserScan
@@ -11,6 +16,7 @@ from asl_turtlebot.msg import DetectedObject
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import math
+import sensor_msgs.point_cloud2 as pc2
 
 # path to the trained conv net
 PATH_TO_MODEL = os.path.join(os.path.dirname(os.path.realpath(__file__)), '../tfmodels/ssd_mobilenet_v1_coco.pb')
@@ -64,6 +70,13 @@ class Detector:
         self.fy = 1.
         self.laser_ranges = []
         self.laser_angle_increment = 0.01 # this gets updated
+         
+        # animal  
+        self.wf = [[2.50, 2.50],[3.75, 4.0],[2.5, 4.25],[5.0, 3.75],[5.75, 3.75],[2.5, 4.25]] #world frame measures in inches
+        self.animal_name = ['stop sign','cat','dog','bear','elephat','giraffe']
+        self.focal = [320.867398616, 322.070412281]
+        #TODO stop sign need to be tested
+        #-------------------------------------------
 
         self.object_publishers = {}
         self.object_labels = load_object_labels(PATH_TO_LABELS)
@@ -143,14 +156,12 @@ class Detector:
 
         ### YOUR CODE HERE ###
 
-        x = (u-self.cx)/self.fx # CHANGED
-        y = (v-self.cy)/self.fy # CHANGED
-        z = 1.0 # CHANGED
-        #normalize
-        length = np.sqrt(x**2+y**2+z**2)
-        x = x/length
-        y = y/length
-        z = z/length
+        x_z_ratio = (u-self.cx)/self.fx
+        y_z_ratio = (v-self.cy)/self.fy
+        z = np.sqrt(1.0/(1.0+x_z_ratio**2+y_z_ratio**2))
+        x = x_z_ratio*z
+        y = y_z_ratio*z
+
         ### END OF YOUR CODE ###
 
         return (x,y,z)
@@ -207,10 +218,8 @@ class Detector:
 
     def camera_common(self, img_laser_ranges, img, img_bgr8):
         (img_h,img_w,img_c) = img.shape
-
         # runs object detection in the image
-        (boxes, scores, classes, num) = self.run_detection(img)
-
+        (boxes, scores, classes, num) = self.run_detection(img)                       
         if num > 0:
             # some objects were detected
             for (box,sc,cl) in zip(boxes, scores, classes):
@@ -220,13 +229,10 @@ class Detector:
                 xmax = int(box[3]*img_w)
                 xcen = int(0.5*(xmax-xmin)+xmin)
                 ycen = int(0.5*(ymax-ymin)+ymin)
-
                 cv2.rectangle(img_bgr8, (xmin,ymin), (xmax,ymax), (255,0,0), 2)
-
                 # computes the vectors in camera frame corresponding to each sides of the box
                 rayleft = self.project_pixel_to_ray(xmin,ycen)
                 rayright = self.project_pixel_to_ray(xmax,ycen)
-
                 # convert the rays to angles (with 0 poiting forward for the robot)
                 thetaleft = math.atan2(-rayleft[0],rayleft[2])
                 thetaright = math.atan2(-rayright[0],rayright[2])
@@ -240,8 +246,8 @@ class Detector:
 
                 if not self.object_publishers.has_key(cl):
                     self.object_publishers[cl] = rospy.Publisher('/detector/'+self.object_labels[cl],
-                        DetectedObject, queue_size=10)
-
+                        DetectedObject, queue_size=10) 
+                
                 # publishes the detected object and its location
                 object_msg = DetectedObject()
                 object_msg.id = cl
@@ -251,7 +257,47 @@ class Detector:
                 object_msg.thetaleft = thetaleft
                 object_msg.thetaright = thetaright
                 object_msg.corners = [ymin,xmin,ymax,xmax]
+
+                # animal distance calculation
+                for i in range(len(self.animal_name)):
+                    if object_msg.name == self.animal_name[i]:
+                        print object_msg.name, ' Detected!' 
+                        world_coord = self.wf[i]
+                        ymin, xmin, ymax, xmax = object_msg.corners
+                        dx = xmax-xmin 
+                        dy = ymax-ymin 
+                        z_world_x = self.focal[0]*world_coord[0]/dx
+                        z_world_y = self.focal[1]*world_coord[1]/dy
+                        if abs(z_world_y - z_world_x) > 3: #if x is not accurate enough 
+                            distance = z_world_y*0.0254 # distance in meters
+                        else:
+                            distance = np.mean([z_world_x,z_world_y], dtype=np.float32)*0.0254 # distance in meters
+                        print(distance)
+                    else: #detect something other than animals/stop sign
+                        distance = 0
+                
+                #rate = rospy.Rate(5) # 5 Hz
+                #i = 0
+                #while not rospy.is_shutdown():
+                #while i <= 100:
+                try:
+                    (translation, rotation) = self.tf_listener.lookupTransform('/map', '/base_footprint', rospy.Time(0))
+                    self.x = translation[0]
+                    self.y = translation[1]
+                    self.theta = euler_from_quaternion([rotation[0], rotation[1], rotation[2], rotation[3]])[2]
+                    print 'theta :', self.theta
+                except (LookupException, ConnectivityException, ExtrapolationException):
+                    pass
+                X_W = self.x + distance * np.cos(self.theta)  # originally have abs # x coordinate of the animal in the world frame
+                Y_W = self.y + distance * np.sin(self.theta)   # y coordinate of the animal in the world frame
+               
+                    #i=i+1
+                object_msg.location = [X_W,Y_W]
+                print(object_msg.location)
+                    #rate.sleep()
+
                 self.object_publishers[cl].publish(object_msg)
+
 
         # displays the camera image
         cv2.imshow("Camera", img_bgr8)
@@ -265,11 +311,11 @@ class Detector:
 
         ### YOUR CODE HERE ###
 
-        self.cx = msg.K[2] # CHANGEE
-        self.cy = msg.K[5] # CHANGED
-        self.fx = msg.K[0] # CHANGEDE
-        self.fy = msg.K[4] # CHANGED 
-
+        K = msg.K
+        self.cx = K[2]
+        self.cy = K[5]
+        self.fx = K[0]
+        self.fy = K[4]
         ### END OF YOUR CODE ###
 
     def laser_callback(self, msg):
@@ -280,7 +326,9 @@ class Detector:
 
     def run(self):
         rospy.spin()
+          
 
 if __name__=='__main__':
     d = Detector()
     d.run()
+

@@ -94,6 +94,7 @@ if __name__=="__main__":
     
     rospy.init_node('turtlebot_teleop')
     pub = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
+    exit_explore_pub = rospy.Publisher('/key_exit', bool, queue_size=1) #new explore flag
 
     x = 0
     th = 0
@@ -127,6 +128,10 @@ if __name__=="__main__":
                 th = 0
                 control_speed = 0
                 control_turn = 0
+            ## NEW for exit EXPLORE mode
+            elif key == 'r' :
+                explore_flag_msg = False
+                exit_explore_pub.publish(explore_flag_msg)
             else:
                 count = count + 1
                 if count > 4:
