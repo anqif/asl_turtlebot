@@ -129,10 +129,13 @@ if __name__=="__main__":
                 th = 0
                 control_speed = 0
                 control_turn = 0
+
             ## NEW for exit EXPLORE mode
-            elif key == 'r' :
-                explore_flag_msg = False
+            elif key == 'r':
+                explore_flag_msg = True
                 exit_explore_pub.publish(explore_flag_msg)
+                print('Quitting EXPLORE mode!!!')
+                
             else:
                 count = count + 1
                 if count > 4:
