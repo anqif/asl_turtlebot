@@ -14,21 +14,23 @@ from enum import Enum
 # hardcoded pose goal
 # x_g = 1.5
 # y_g = -4.0
+
 # theta_g = 0
 
 # threshold at which we consider the robot at a location
 POS_EPS = .1
 THETA_EPS = .15
+ANIMAL_THRSH = 0.2
 
 # time to stop at a stop sign
-STOP_TIME = 1
+STOP_TIME = 6
 
 # minimum distance from a stop sign to obey it
 STOP_MIN_DIST = .5
 
 # time taken to cross an intersection
 #can change depend on the distance or just tune to choose a safe value
-CROSSING_TIME = 1
+CROSSING_TIME = 10
 
 #detected distance and current distance for determing if rescue the right animal
 detected_dist_threshold = 0.1 #m
@@ -66,7 +68,12 @@ class Supervisor:
         self.x_g = 0
         self.y_g = 0
         self.th_g = 0
+        # previous goal pose
+        self.x_pre_g = 0
+        self.y_pre_g = 0
+        self.th_pre_g = 0
 
+        self.BTOGcounter = 0
         # publishers
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
@@ -82,6 +89,7 @@ class Supervisor:
         rospy.Subscriber('/cmd_pose', Pose2D, self.goal_pose_callback)
         # to get rviz goal position
         rospy.Subscriber('/move_base_simple/goal', PoseStamped, self.rviz_goal_callback)
+        rospy.Subscriber('/explore/goal', PoseStamped, self.rviz_goal_callback)
         # to get the signal of start of rescuing
         rospy.Subscriber('/rescue_on', Bool, self.comm_callback)
         # to get the signal of end of exploration
@@ -102,19 +110,19 @@ class Supervisor:
         # list of edtected stop signs (x,y) (no th needed)
         self.Detected_stop_list = []
         # hard coded position of garage
-        self.pose_garage = np.array([0,0, np.pi])
+        self.pose_garage = np.array([0.0,0.0, 0.0])
         # flag means garage is reached
-        self.GarageReached = True
+        self.GarageReached = False
         # flag means exploration is done
         self.explore_done = False
 
     def exit_explore_callback(self,msg):
-        print 'inside callback of exist'
+        #print 'inside callback of exist'
         if msg.data == True:
             self.explore_done = True
-            print '!!!!exit'
+            #print '!!!!exit'
         else:
-            print 'not good in exit callback'
+            #print 'not good in exit callback'
             pass #TODO need confirm dont need to do anything with true
 
     def rviz_goal_callback(self, msg):
@@ -139,40 +147,40 @@ class Supervisor:
 
     def stay_idle(self):
         """ sends zero velocity to stay put """
-        print 'in side stay_idle'
+        #print 'in side stay_idle'
         vel_g_msg = Twist()
         self.cmd_vel_publisher.publish(vel_g_msg)
-        print 'in idle: publish 0 vel'
+        #print 'in idle: publish 0 vel'
 
     def animal_detected_callback(self, msg):
         if self.mode == Mode.EXPLORE:
             self.PreMode = Mode.EXPLORE
             self.mode = Mode.STOP
-            #compute distance from bounding box around detected object
-            # ymin,xmin,ymax,xmax = msg.corners
-            # dx = xmax-xmin
-            # dy = ymax-ymin
-            # area = dx*dy
-            # a = -1.433130624175689*(10**-5)
-            # b = 0.4485
-            # box_dist = a * area + b
-            # print 'name: ', msg.name, 'animal dist: ', box_dist
-            # x_curr_animal = self.x + box_dist * np.cos(self.theta)
-            # y_curr_animal = self.y + box_dist * np.sin(self.theta)
             self.x_curr_animal = msg.location[0]
             self.y_curr_animal = msg.location[1]
+            print '========================='
             print 'x_an,y_an: ', self.x_curr_animal, self.y_curr_animal
-            self.animal_num += 1
-            self.Detected_animal_list.append((self.x_curr_animal, self.y_curr_animal)) # add animal to list
+            print 'name: ', msg.name
+            if self.check_if_already_detected(self.x_curr_animal, self.y_curr_animal, ANIMAL_THRSH):
+                print 'oh no! we detected the same animal!'
+                pass
+            else:
+                self.detected += 1
+                self.Detected_animal_list.append((self.x_curr_animal, self.y_curr_animal)) # add animal to list
+            print 'detected animal array', self.Detected_animal_list
 
         #need to change detected_pos thing, idea is to make sure the newly rescued animal is among the previously detected animal
-        if (self.mode == Mode.RESCUE): #and self.close_to_wo_th(self.Detected_animal_list[self.rescued][0], self.Detected_animal_list[self.rescued][1]):
+        print self.close_to_wo_th(self.Detected_animal_list[self.rescued][0], self.Detected_animal_list[self.rescued][1])
+        if (self.mode == Mode.RESCUE) and self.close_to_wo_th(self.Detected_animal_list[self.rescued][0], self.Detected_animal_list[self.rescued][1]):
             self.PreMode = Mode.RESCUE
             self.mode = Mode.STOP
+            self.x_curr_rescued_animal = self.Detected_animal_list[self.rescued][0] #msg.location[0] #TODO can be used for know if the distance b/t rescued and detected is close enough
+            self.y_curr_rescued_animal = self.Detected_animal_list[self.rescued][1]#msg.location[1]
             self.rescued += 1
-            self.x_curr_rescued_animal = msg.location[0] #TODO can be used for know if the distance b/t rescued and detected is close enough
-            self.y_curr_rescued_animal = msg.location[1]
-            print 'x_an,y_an: ', self.x_curr_rescued_animal, self.y_curr_rescued_animal
+            print 'in rescue x_an,y_an: ', self.x_curr_rescued_animal, self.y_curr_rescued_animal
+            print 
+            print 'name: ', msg.name
+            print 'rescued: ',self.rescued
 
     def stop_sign_detected_callback(self, msg):
         """ callback for when the detector has found a stop sign. Note that
@@ -199,23 +207,40 @@ class Supervisor:
         self.y_g = msg.y
         self.th_g = msg.theta
 
+    def check_if_already_detected(self, x, y, threshold):
+        for i in range(self.detected):
+            if np.abs(x-self.Detected_animal_list[i][0]) < threshold and\
+                np.abs(y-self.Detected_animal_list[i][1]) < threshold:
+                self.mode = Mode.EXPLORE
+                return True
+            else:
+                return False
+
+
     def set_goal_pose(self):
-        if self.mode == Mode.RESCUE:
-            self.x_g = self.Detected_animal_list[self.rescued-1][0]
-            self.y_g = self.Detected_animal_list[self.rescued-1][1]
+        #print 'rescued number: ',self.rescued
+        if (self.mode == Mode.RESCUE) and (self.rescued != self.detected):
+            #print 'in first if'
+            self.x_g = self.Detected_animal_list[self.rescued][0]
+            self.y_g = self.Detected_animal_list[self.rescued][1]
             self.th_g = 0
-        elif self.mode == Mode.BTOG:
+        elif (self.mode == Mode.BTOG) or (self.rescued == self.detected) :
+            #print 'in second if'
             self.x_g = self.pose_garage[0]
             self.y_g = self.pose_garage[1]
             self.th_g = 0
+        #print 'self pose', self.x_g, self.y_g
 
     def nav_to_pose(self):
         """ sends the current desired pose to the naviagtor """
         nav_g_msg = Pose2D()
+        # if self.x_g != self.x_pre_g and self.y_g != self.y_pre_g:
         nav_g_msg.x = self.x_g
         nav_g_msg.y = self.y_g
         nav_g_msg.theta = self.th_g
         self.nav_goal_publisher.publish(nav_g_msg)
+        # self.x_pre_g = np.copy(self.x_g)
+        # self.y_pre_g = np.copy(self.y_g)
 
     def close_to(self,x,y,theta):
         """ checks if the robot is at a pose within some threshold """
@@ -223,8 +248,6 @@ class Supervisor:
 
     def close_to_wo_th(self,x,y):
         """ check if the position of the robot is close enough to the animal being rescued """
-        print type(x)
-        print type(self.x)
         return (abs(x-self.x)<POS_EPS and abs(y-self.y)<POS_EPS)
 
     # def go_to_pose(self):
@@ -261,7 +284,8 @@ class Supervisor:
         # checks wich mode it is in and acts accordingly
         if self.mode == Mode.IDLE:
             # not doing anything
-            rospy.loginfo("Idling..")
+            self.stay_idle()
+            #rospy.loginfo("Idling..")
 
         elif self.mode == Mode.EXPLORE:
             # animal or stop sign detected
@@ -270,7 +294,7 @@ class Supervisor:
                 self.PreMode = Mode.EXPLORE
                 self.mode = Mode.BTOG
             elif self.close_to(self.x_g,self.y_g,self.th_g):
-                rospy.loginfo("close to nav goal, stay idle...")
+                #rospy.loginfo("close to nav goal, stay idle...")
                 self.stay_idle()
                 self.PreMode = Mode.EXPLORE
                 # rospy.loginfo("(from explore to idle:) set premode to explore...")
@@ -278,26 +302,31 @@ class Supervisor:
                 #explore
                 self.PreMode = Mode.EXPLORE
                 self.nav_to_pose()
-                rospy.loginfo("exploring...")
+                #rospy.loginfo("exploring...")
 
         elif self.mode == Mode.STOP:
             # cannot use sleep as we would stil like to record/calculate animal positions
-            rospy.loginfo("Stopped...")
+            #rospy.loginfo("Stopped...")
             curr_time_sec = rospy.get_time()
-            print curr_time_sec
+            #print curr_time_sec
             while (rospy.get_time() - curr_time_sec <= STOP_TIME):
-                pass
-            print 'time after stop: ', rospy.get_time()
+                self.stay_idle()
+            #print 'time after stop: ', rospy.get_time()
             self.mode = Mode.CROSS
 
         elif self.mode == Mode.CROSS:
-            rospy.loginfo("crossing...")
+            #rospy.loginfo("crossing...")
             curr_time_sec2 = rospy.get_time()
-            print curr_time_sec2
-            if (self.PreMode == Mode.EXPLORE) or (self.PreMode == Mode.RESCUE) or (self.PreMode == Mode.BTOG):
+            #print curr_time_sec2
+            if (self.PreMode == Mode.EXPLORE):
+                while (rospy.get_time() - curr_time_sec2 <= CROSSING_TIME):
+                    pass
+                #print 'time after cross: ', rospy.get_time()
+                self.mode = self.PreMode
+            if (self.PreMode == Mode.RESCUE) or (self.PreMode == Mode.BTOG):
                 while (rospy.get_time() - curr_time_sec2 <= CROSSING_TIME):
                     self.nav_to_pose() #TODO need test to see if set the automatic goal will work
-                print 'time after cross: ', rospy.get_time()
+                #print 'time after cross: ', rospy.get_time()
                 self.mode = self.PreMode
 
         elif self.mode == Mode.RESCUE:
@@ -318,12 +347,23 @@ class Supervisor:
 
         elif self.mode == Mode.BTOG:
             self.set_goal_pose()
-            self.PreMode = self.mode
+            if (self.GarageReached):
+                self.BTOGcounter+=1
+            #print (self.GarageReached)
+            #print self.PreMode
             self.GarageReached = self.close_to_wo_th(self.pose_garage[0], self.pose_garage[1])
             if (self.GarageReached) and (self.rescued == self.detected):
+                print 'mission completed!'
+                #print 'go to idle'
                 self.mode = Mode.IDLE
+            elif self.GarageReached and self.BTOGcounter == 1:
+                print 'garaged reached! go to comm'
+                self.mode = Mode.COMM
             elif self.GarageReached == 0:
-                self.nav_to_pose()
+                #print 'garage not reached'
+                self.nav_to_pose()    
+            self.PreMode = self.mode
+            
 
         else:
             raise Exception('This mode is not supported: %s'
