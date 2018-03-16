@@ -5,7 +5,7 @@ import rospy
 from gazebo_msgs.msg import ModelStates
 from std_msgs.msg import Bool
 from std_msgs.msg import Float32MultiArray, String
-from geometry_msgs.msg import Twist, PoseArray, Pose2D
+from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from asl_turtlebot.msg import DetectedObject
 import tf
 import math
@@ -60,8 +60,13 @@ class Supervisor:
         self.y = 0
         self.theta = 0
         # current mode
-        self.mode = Mode.RESCUE#EXPLORE
+        self.mode = Mode.EXPLORE
         self.last_mode_printed = None
+        # goal pose
+        self.x_g = 0
+        self.y_g = 0
+        self.th_g = 0
+
         # publishers
         self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
         self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
@@ -85,15 +90,15 @@ class Supervisor:
         #constructor
         self.trans_listener = tf.TransformListener()
         # # of detected animals
-        self.detected = 3
+        self.detected = 0
         #all # of animals
-        self.all = 5
+        self.all = 0#5
         # # of rescued animals
         self.rescued = 0
         # PreMode for going back to the previous meaningful mode after stopped
         self.PreMode = self.mode
         # list of detected animals x,y (no th needed)
-        self.Detected_animal_list = [[3,3],[4,1],[1,1]]
+        self.Detected_animal_list = []#[[3,3],[4,1],[1,1]]
         # list of edtected stop signs (x,y) (no th needed)
         self.Detected_stop_list = []
         # hard coded position of garage
@@ -117,7 +122,7 @@ class Supervisor:
             self.y_g = msg.pose.position.y
             rotation = [msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w]
             euler = tf.transformations.euler_from_quaternion(rotation)
-            self.theta_g = euler[2]
+            self.th_g = euler[2]
 
     # def go_to_pose(self):
     #     """ sends the current desired pose to the pose controller """
@@ -126,14 +131,6 @@ class Supervisor:
     #     pose_g_msg.y = self.y_g
     #     pose_g_msg.theta = self.theta_g
     #     self.pose_goal_publisher.publish(pose_g_msg)
-
-    def nav_to_pose(self):
-        """ sends the current desired pose to the naviagtor """
-        nav_g_msg = Pose2D()
-        nav_g_msg.x = self.x_g
-        nav_g_msg.y = self.y_g
-        nav_g_msg.theta = self.theta_g
-        self.nav_goal_publisher.publish(nav_g_msg)
 
     def stay_idle(self):
         """ sends zero velocity to stay put """
@@ -191,10 +188,9 @@ class Supervisor:
             self.mode = Mode.RESCUE
 
     def goal_pose_callback(self, msg):
-        x, y, th = msg
-        self.x_g = x
-        self.y_g = y
-        self.th_g = th
+        self.x_g = msg.x
+        self.y_g = msg.y
+        self.th_g = msg.theta
 
     def set_goal_pose(self):
         if self.mode == Mode.RESCUE:
@@ -266,11 +262,11 @@ class Supervisor:
                 print 'all animal detected ...'
                 self.PreMode = Mode.EXPLORE
                 self.mode = Mode.BTOG
-            # elif close_to(self.x_g,self.y_g,self.theta_g):
-            #     self.mode = Mode.IDLE
-            #     rospy.loginfo("close to nav goal, idling...")
-            #     self.PreMode = Mode.EXPLORE
-            #     rospy.loginfo("(from explore to idle:) set premode to explore...")
+            elif close_to(self.x_g,self.y_g,self.theta_g):
+                rospy.loginfo("close to nav goal, stay idle...")
+                self.stay_idle()
+                self.PreMode = Mode.EXPLORE
+                # rospy.loginfo("(from explore to idle:) set premode to explore...")
             else:
                 #explore
                 self.PreMode = Mode.EXPLORE
