@@ -30,6 +30,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import rospy
+from std_msgs.msg import Bool
 
 from geometry_msgs.msg import Twist
 
@@ -94,7 +95,7 @@ if __name__=="__main__":
     
     rospy.init_node('turtlebot_teleop')
     pub = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
-    exit_explore_pub = rospy.Publisher('/key_exit', bool, queue_size=1) #new explore flag
+    exit_explore_pub = rospy.Publisher('/key_exit', Bool, queue_size=1) #new explore flag
 
     x = 0
     th = 0
