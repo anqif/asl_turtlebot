@@ -109,15 +109,20 @@ class Supervisor:
         self.explore_done = False
 
     def exit_explore_callback(self,msg):
-        if msg == False:
+        print 'inside callback of exist'
+        if msg.data == True:
             self.explore_done = True
+            print '!!!!exit'
         else:
+            print 'not good in exit callback'
             pass #TODO need confirm dont need to do anything with true
 
     def rviz_goal_callback(self, msg):
         """ callback for a pose goal sent through rviz """
         #the rviz thing should only work when robot is in exploration mode
+        print 'in rviz callback'
         if self.mode == Mode.EXPLORE:
+            print 'in rviz x_g got updated'
             self.x_g = msg.pose.position.x
             self.y_g = msg.pose.position.y
             rotation = [msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w]
@@ -134,8 +139,10 @@ class Supervisor:
 
     def stay_idle(self):
         """ sends zero velocity to stay put """
+        print 'in side stay_idle'
         vel_g_msg = Twist()
         self.cmd_vel_publisher.publish(vel_g_msg)
+        print 'in idle: publish 0 vel'
 
     def animal_detected_callback(self, msg):
         if self.mode == Mode.EXPLORE:
@@ -184,7 +191,7 @@ class Supervisor:
     def comm_callback(self,msg):
         #assume msg is a boolean indicating that we can start rescuing
         #msg is set to true for testing!! for testing!!!
-        if ((msg) and (self.mode == Mode.COMM)):
+        if ((msg.data) and (self.mode == Mode.COMM)):
             self.mode = Mode.RESCUE
 
     def goal_pose_callback(self, msg):
@@ -262,7 +269,7 @@ class Supervisor:
                 print 'all animal detected ...'
                 self.PreMode = Mode.EXPLORE
                 self.mode = Mode.BTOG
-            elif close_to(self.x_g,self.y_g,self.theta_g):
+            elif self.close_to(self.x_g,self.y_g,self.th_g):
                 rospy.loginfo("close to nav goal, stay idle...")
                 self.stay_idle()
                 self.PreMode = Mode.EXPLORE
